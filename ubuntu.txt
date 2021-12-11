@@ -1,0 +1,7 @@
+asyncio
+aiohttp
+python-socketio
+SoundFile
+keras==2.6.0
+transliterate
+TensorFlowTTS
