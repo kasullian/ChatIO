@@ -3,6 +3,7 @@ import asyncio
 from aiohttp import web
 
 import socketio
+import base64
 
 sio = socketio.AsyncServer(async_mode='aiohttp')
 app = web.Application()
@@ -14,29 +15,27 @@ async def index(request):
 
 
 @sio.event
-async def chatMessage(sid, message):
-    print('chatMessage received from:', sid)
+async def chatMessage(sid, msg):
+    print(f'chatMessage received from: {sid}')
+    await sio.emit('chatMessage', msg)
 
-    #emit users message
-    await sio.emit('chatMessage', message, room=sid)
-    
-    #pass message through blenderbot
-    #todo
 
-    #emit blenderbot response
-    #todo
-    #await sio.emit('chatMessage', {'data': message, 'debug': True, 'sid': sid}, room=sid)
+@sio.event
+async def wavMessage(sid, msg):
+    #todo generate tts wav based on msg
+    encode_string = base64.b64encode(open("ljs.wav", "rb").read()).decode()
+    await sio.emit('wavMessage', encode_string, room=sid)
 
 
 @sio.event
 async def connect(sid, environ):
     print("Client connected:", sid)
-    await sio.emit('chatMessage', f'User connected: {sid}', room=sid)
+    await sio.emit('chatMessage', f'User connected: {sid}')
 
 
 @sio.event
 def disconnect(sid):
-    print('Client disconnected:', sid)
+    print(f'Client disconnected: {sid}')
 
 
 app.router.add_get('/', index)
