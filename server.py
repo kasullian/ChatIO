@@ -30,7 +30,7 @@ async def chatMessage(sid, msg):
 
 
 @sio.event
-async def wavMessage(sid, msg):    
+async def emitText(sid, msg):    
     if os.name != 'nt': #tensorflowtts only works on ubuntu
         input_ids = processor.text_to_sequence(msg)
         #tacotron2 inference (text-to-mel)
@@ -44,7 +44,7 @@ async def wavMessage(sid, msg):
         #create file from melgan wav data & send it off
         sf.write('./ljs.wav', audio, 22050, "PCM_16")
     encode_string = base64.b64encode(open("ljs.wav", "rb").read()).decode()
-    await sio.emit('wavMessage', {'text': msg, 'wav': encode_string}, room=sid)
+    await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string}, room=sid)
 
 
 @sio.event
