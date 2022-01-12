@@ -3,13 +3,26 @@ Basic socket chat server utilizing aiohttp &amp; socketio.
 
 # Requirements
 Python 3.8
+A speech to text model
+
+# Downloading STT Models
+```
+# install 🐸STT model manager
+pip install -U pip
+pip install coqui-stt-model-manager
+
+# run the model manager. A browser tab will open and you can then download and test models from the Model Zoo.
+stt-model-manager
+
+# once desired model is downloaded, you'll have to either move the model & scorer into the project directory, or reference them in the code.
+```
 
 # Installation
 ```
 # install dependencies if on windows
 pip install -r windows.txt
 
-#install dependencies if on ubuntu
+# install dependencies if on ubuntu
 pip install -r ubuntu.txt
 
 # run server, tensorflowtts will be disabled on windows
