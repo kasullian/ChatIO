@@ -3,6 +3,7 @@ Basic socket chat server utilizing aiohttp &amp; socketio.
 
 # Requirements
 Python 3.8
+
 A speech to text model
 
 # Downloading STT Models
