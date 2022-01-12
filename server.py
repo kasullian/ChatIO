@@ -3,7 +3,6 @@ from asyncio.windows_events import NULL
 from aiohttp import web
 import socketio
 import base64
-import os
 import json
 from websocket import create_connection
 import wave
