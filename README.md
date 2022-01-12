@@ -1,6 +1,9 @@
 # ChatIO
 Basic socket chat server utilizing aiohttp &amp; socketio.
 
+# Requirements
+Python 3.8
+
 # Installation
 ```
 # install dependencies if on windows
@@ -16,7 +19,7 @@ python server.py
 # Virtual Env Installation
 ```
 # create a virtual env for the project using your desired python version
-C:\Users\username\AppData\Local\Programs\Python\Python310\python.exe -m venv venv
+C:\Users\username\AppData\Local\Programs\Python\Python38\python.exe -m venv venv
 
 # activate the newly created virtual environment & install dependencies (on windows)
 ./venv/scripts/activate.ps1

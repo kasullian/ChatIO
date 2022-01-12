@@ -30,11 +30,6 @@ ds.enableExternalScorer(scorer)
 scorer_load_end = timer() - scorer_load_start
 print("Loaded scorer in {:.3}s.".format(scorer_load_end))
 
-# serve html
-async def index(request):
-    with open('app.html') as f:
-        return web.Response(text=f.read(), content_type='text/html')
-
 ws = NULL
 try:    
     ws = create_connection("ws://localhost:8080/websocket") #dirty, should close at some point
@@ -45,6 +40,13 @@ try:
     print("Received '%s'" % result)        ##################################################
 except:
     print("Unable to connect to BlenderBot.")
+
+
+# serve html
+async def index(request):
+    with open('app.html') as f:
+        return web.Response(text=f.read(), content_type='text/html')
+
 
 @sio.event
 async def chatMessage(sid, msg):
