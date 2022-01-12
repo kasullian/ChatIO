@@ -1,3 +1,8 @@
 asyncio
-aiohttp
 python-socketio
+websocket
+websocket-client
+aiohttp
+requests
+numpy==1.17.3
+stt

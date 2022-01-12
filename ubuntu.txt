@@ -1,4 +1,5 @@
 asyncio
+websocket
 aiohttp
 python-socketio
 SoundFile

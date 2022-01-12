@@ -1,0 +1,5 @@
+venv
+*.wav
+*.txt
+*.tflite
+*.scorer

@@ -35,7 +35,7 @@
 				return false;
 			});
 			socket.on('chatMessage', function(msg){
-				$('#messages').append($('<li>').text(msg));
+				$('#messages').append($('<li>').text(JSON.stringify(msg)));
 				console.log(msg);
 				window.scrollTo(0, document.body.scrollHeight);
 			});
