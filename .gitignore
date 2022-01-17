@@ -3,3 +3,5 @@ venv
 *.txt
 *.tflite
 *.scorer
+*.env
+models.json

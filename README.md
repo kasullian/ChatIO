@@ -1,10 +1,22 @@
 # ChatIO
-Basic socket chat server utilizing aiohttp &amp; socketio.
+Basic chat service utilizing Coqui TTS, Coqui STT, aiohttp &amp; socketio.
 
 # Requirements
-Python 3.8
+* Python 3.8
+* A speech to text model
 
-A speech to text model
+# Configuring Speech To Text
+Download your desired model from the [Coqui Model Zoo](https://coqui.ai/english/coqui/v0.9.3#download).
+
+* Download the model.tflite file
+* Download the .scorer file
+* After the files have been downloaded, move them into your project directory
+
+# Configuring BlenderBot
+ Create a .env file in the project directory then paste the following into the file
+```
+BLENDERBOT_URL=ws://localhost:8080/websocket
+```
 
 # Installation
 ```
@@ -14,11 +26,14 @@ pip install -r windows.txt
 # install dependencies if on ubuntu
 pip install -r ubuntu.txt
 
-# run server, tensorflowtts will be disabled on windows
+# install Coqui TTS
+pip install TTS
+
+# run the server
 python server.py
 ```
 
-# Virtual Env Installation
+# Virtual Environment Installation
 ```
 # create a virtual env for the project using your desired python version
 C:\Users\username\AppData\Local\Programs\Python\Python38\python.exe -m venv venv
@@ -31,18 +46,10 @@ pip install -r windows.txt
 ./venv/scripts/activate
 pip install -r ubuntu.txt
 
+# install Coqui TTS
+pip install TTS
+
 # run the server
 python server.py
 ```
 
-# Downloading STT Models
-```
-# install 🐸STT model manager
-pip install -U pip
-pip install coqui-stt-model-manager
-
-# run the model manager. A browser tab will open and you can then download and test models from the Model Zoo.
-stt-model-manager
-
-# once desired model is downloaded, you'll have to either move the model & scorer into the project directory, or reference them in the code.
-```
