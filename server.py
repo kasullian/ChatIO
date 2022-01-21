@@ -12,6 +12,7 @@ from asyncio.windows_events import NULL
 from aiohttp import web
 from timeit import default_timer as timer
 from websocket import create_connection
+from tinydb import TinyDB
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -47,7 +48,7 @@ synthesizer_load_end = timer() - synthesizer_load_start
 print("Loaded synthesizer in {:.3}s.".format(synthesizer_load_end))
 
 # load STT model
-scorer = "coqui-stt-0.9.3-models.scorer"
+scorer = "large_vocabulary.scorer"
 model = "model.tflite"
 model_load_start = timer()
 ds = Model(model)
@@ -65,11 +66,17 @@ sio = socketio.AsyncServer(async_mode='aiohttp')
 app = web.Application()
 sio.attach(app)
 
+# database
+db = TinyDB('db.json')
+
+# http routes
+routes = web.RouteTableDef()
+
 # blenderbot socket instances
 clientTable = []
 def get_client(sid):
     for client in clientTable:
-        if client.get_sid() == sid:
+        if client.get_sid() == sid and client.get_socket():
             return client
     return False
 
@@ -77,25 +84,38 @@ class BlenderBotClient:
     # constructor
     def __init__(self, sid):
         self.sid = sid
+        self.responses = []
+        self.messages = []
         # initialize blenderbot instance
         try:    
             self.ws = create_connection(os.getenv('BLENDERBOT_URL')) #########################################
             self.ws.send(json.dumps({"text": "begin"})) #sequence to initiate basic parl-ai socket instance ##
-            result =  self.ws.recv()                    ######################################################
-            self.ws.send(json.dumps({"text": "begin"})) ######################################################
             result = self.ws.recv()                     ######################################################
+            self.ws.send(json.dumps({"text": "begin"})) ######################################################
+            result = self.ws.recv()                      ######################################################
             print("Received '%s'" % result)             ######################################################
         except:
-            self.ws = 0
+            self.ws = False
             print(f"{sid}: failed to connect to BlenderBot.")
     def disconnect(self):
         self.ws.close()
     def send(self, jsonObject):
+        self.messages.append(jsonObject)
         self.ws.send(json.dumps(jsonObject))
     def receive(self):
-        return self.ws.recv()
+        result = self.ws.recv()
+        self.responses.append(json.loads(result))
+        return result
     def get_sid(self):
         return self.sid
+    def get_socket(self):
+        return self.ws
+    def get_logs(self):
+        return json.dumps({'messages': self.messages, 'responses': self.responses})
+
+@routes.get('/logs')
+async def getLogs(request):
+    return web.Response(text="logs")
 
 @sio.event
 async def chatMessage(sid, msg):
@@ -112,7 +132,7 @@ async def chatMessage(sid, msg):
 async def emitText(sid, msg):  
     client = get_client(sid)
     if client:  
-        client.send(json.dumps({"text": f"{msg}"}))
+        client.send({"text": f"{msg}"})
         bbResponse = json.loads(result = client.receive())
         ttswav = synthesizer.tts(bbResponse["text"], "p243")
         synthesizer.save_wav(ttswav, f"{sid}.wav")
@@ -126,10 +146,10 @@ async def emitAudio(sid, msg):
     decoded_data = base64.b64decode(jsonData.get("audio_input"))
     client = get_client(sid)
     if client:
-        with wave.open(f"{sid}.wav", 'w') as wav:
+        with wave.open(f"{sid}_TEST.wav", 'w') as wav:
             wav.setparams((1, 2, 16000, 0, 'NONE', 'NONE'))
             wav.writeframes(decoded_data)
-        with wave.open(f"{sid}.wav", 'r') as wav:
+        with wave.open(f"{sid}_TEST.wav", 'r') as wav:
             fs_orig = wav.getframerate()
             audio = np.frombuffer(wav.readframes(wav.getnframes()), np.int16)
             audio_length = wav.getnframes() * (1 / fs_orig)
@@ -137,19 +157,20 @@ async def emitAudio(sid, msg):
             out = ds.stt(audio)
             inference_end = timer() - inference_start
             print("STT Inference took %0.3fs for %0.3fs audio file." % (inference_end, audio_length))
-            print(f"User said: {out}")
-            blender_start = timer()
+            print(f"User said: {out}") # if hotphrase detected, then return relative generic response
+            blender_start = timer() # else do the blenderbot stuff
             out = ds.stt(audio)
-            client.send(json.dumps({"text": f"{out}"}))
-            result = client.receive()
-            blender_end = timer() - blender_start
-            print("BB Inference took %0.3fs" % (blender_end))
-            bbResponse = json.loads(result)["text"]
-            ttswav = synthesizer.tts(bbResponse, "p243")
-            synthesizer.save_wav(ttswav, f"{sid}.wav")
-        encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
-        os.remove(f"{sid}.wav")
-        await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id")}, room=sid)
+            if len(out) != 0:
+                client.send({"text": f"{out}"})
+                result = client.receive()
+                blender_end = timer() - blender_start
+                print("BB Inference took %0.3fs" % (blender_end))
+                bbResponse = json.loads(result)["text"]
+                ttswav = synthesizer.tts(bbResponse, "p243")
+                synthesizer.save_wav(ttswav, f"{sid}.wav")
+                encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
+                os.remove(f"{sid}.wav")
+                await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id")}, room=sid)
 
 @sio.event
 async def connect(sid, environ):
@@ -162,14 +183,19 @@ async def disconnect(sid):
     client = get_client(sid)
     if client:
         client.disconnect()
+        logs = json.loads(client.get_logs())
+        if len(logs.get("responses")):
+            table = db.table('logs')
+            table.insert(logs)
         clientTable.remove(client)
-        print(f'Client disconnected: {sid}', room=sid)
+        print(f'Client disconnected: {sid}')
 
 # serve html
 async def index(request):
     with open('app.html') as f:
         return web.Response(text=f.read(), content_type='text/html')
 
+app.add_routes(routes)
 app.router.add_get('/', index)
 if __name__ == '__main__':
     web.run_app(app, port=1337)

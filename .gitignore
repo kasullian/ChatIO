@@ -4,4 +4,4 @@ venv
 *.tflite
 *.scorer
 *.env
-models.json
+*.json

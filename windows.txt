@@ -5,4 +5,5 @@ websocket-client
 aiohttp
 requests
 stt
+tinydb
 python-dotenv
