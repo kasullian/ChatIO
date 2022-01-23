@@ -3,7 +3,6 @@ Basic chat service utilizing Coqui TTS, Coqui STT, aiohttp &amp; socketio.
 
 # Requirements
 * Python 3.8
-* A speech to text model
 
 # Configuring Speech To Text
 You can use a pre-build STT model from the [Coqui Model Zoo](https://coqui.ai/models/).
