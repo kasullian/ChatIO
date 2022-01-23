@@ -6,11 +6,9 @@ Basic chat service utilizing Coqui TTS, Coqui STT, aiohttp &amp; socketio.
 * A speech to text model
 
 # Configuring Speech To Text
-Download your desired model from the [Coqui Model Zoo](https://coqui.ai/english/coqui/v0.9.3#download).
+You can use a pre-build STT model from the [Coqui Model Zoo](https://coqui.ai/models/).
 
-* Download the model.tflite file
-* Download the .scorer file
-* After the files have been downloaded, move them into your project directory
+* Modify the source to use the url of your desired model & scorer
 
 # Configuring BlenderBot
  Create a .env file in the project directory then paste the following into the file
@@ -21,10 +19,7 @@ BLENDERBOT_URL=ws://localhost:8080/websocket
 # Installation
 ```
 # install dependencies if on windows
-pip install -r windows.txt
-
-# install dependencies if on ubuntu
-pip install -r ubuntu.txt
+pip install -r requirements.txt
 
 # install Coqui TTS
 pip install TTS

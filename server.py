@@ -1,14 +1,15 @@
 import os
+import os.path
 import requests
 import socketio
 import base64
 import json
 import wave
 import numpy as np
+from os import path
 from stt import Model
 from TTS.utils.manage import ModelManager
 from TTS.utils.synthesizer import Synthesizer
-from asyncio.windows_events import NULL
 from aiohttp import web
 from timeit import default_timer as timer
 from websocket import create_connection
@@ -47,8 +48,20 @@ synthesizer = Synthesizer(
 synthesizer_load_end = timer() - synthesizer_load_start
 print("Loaded synthesizer in {:.3}s.".format(synthesizer_load_end))
 
+# download stt model
+if not path.exists("model.tflite"):
+    r = requests.get("https://github.com/coqui-ai/STT-models/releases/download/english/coqui/v0.9.3/model.tflite")
+    with open("model.tflite", 'wb') as f:
+        f.write(r.content) 
+
+# download stt scorer
+if not path.exists("model.scorer"):
+    r = requests.get("https://github.com/coqui-ai/STT-models/releases/download/english/coqui/v0.9.3/coqui-stt-0.9.3-models.scorer")
+    with open("model.scorer", 'wb') as f:
+        f.write(r.content) 
+
 # load STT model
-scorer = "large_vocabulary.scorer"
+scorer = "model.scorer"
 model = "model.tflite"
 model_load_start = timer()
 ds = Model(model)
@@ -87,7 +100,7 @@ class BlenderBotClient:
         self.responses = []
         self.messages = []
         # initialize blenderbot instance
-        try:    
+        try:
             self.ws = create_connection(os.getenv('BLENDERBOT_URL')) #########################################
             self.ws.send(json.dumps({"text": "begin"})) #sequence to initiate basic parl-ai socket instance ##
             result = self.ws.recv()                     ######################################################
