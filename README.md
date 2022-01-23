@@ -37,7 +37,7 @@ C:\Users\username\AppData\Local\Programs\Python\Python38\python.exe -m venv venv
 pip install -r windows.txt
 
 # activate the newly created virtual environment & install dependencies (on ubuntu)
-./venv/scripts/activate
+source venv/bin/activate
 pip install -r ubuntu.txt
 
 # install Coqui TTS
