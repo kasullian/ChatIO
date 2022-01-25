@@ -2,6 +2,8 @@ import os
 import os.path
 import requests
 import socketio
+import asyncio
+import aiohttp_cors
 import base64
 import json
 import wave
@@ -82,9 +84,6 @@ sio.attach(app)
 # database
 db = TinyDB('db.json')
 
-# http routes
-routes = web.RouteTableDef()
-
 # blenderbot socket instances
 clientTable = []
 def get_client(sid):
@@ -126,9 +125,45 @@ class BlenderBotClient:
     def get_logs(self):
         return json.dumps({'messages': self.messages, 'responses': self.responses})
 
-@routes.get('/logs')
-async def getLogs(request):
-    return web.Response(text="logs")
+async def select_chat(request):
+    data = await request.json()
+    table = db.table('logs')
+    logs = table.all()
+    return web.Response(text=json.dumps({'id': data.get("id"), 'logs': logs[data.get("id")]}), content_type="application/json")
+
+async def get_chats(request):
+    table = db.table('logs')
+    logs = table.all()
+    return web.Response(text=json.dumps(logs), content_type="application/json")
+
+# `aiohttp_cors.setup` returns `aiohttp_cors.CorsConfig` instance.
+# The `cors` instance will store CORS configuration for the
+# application.
+cors = aiohttp_cors.setup(app)
+
+# To enable CORS processing for specific route you need to add
+# that route to the CORS configuration object and specify its
+# CORS options.
+resource = cors.add(app.router.add_resource("/select-chat"))
+route = cors.add(
+    resource.add_route("POST", select_chat), {
+        "*": aiohttp_cors.ResourceOptions(
+            allow_credentials=True,
+            expose_headers=("*"),
+            allow_headers=("*")
+        )
+    })
+
+resource = cors.add(app.router.add_resource("/get-chats"))
+route = cors.add(
+    resource.add_route("GET", get_chats), {
+        "*": aiohttp_cors.ResourceOptions(
+            allow_credentials=True,
+            expose_headers=("*"),
+            allow_headers=("*")
+        )
+    })
+
 
 @sio.event
 async def chatMessage(sid, msg):
@@ -146,7 +181,7 @@ async def emitText(sid, msg):
     client = get_client(sid)
     if client:  
         client.send({"text": f"{msg}"})
-        bbResponse = json.loads(result = client.receive())
+        bbResponse = json.loads(client.receive())
         ttswav = synthesizer.tts(bbResponse["text"], "p243")
         synthesizer.save_wav(ttswav, f"{sid}.wav")
         encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
@@ -184,6 +219,12 @@ async def emitAudio(sid, msg):
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
                 os.remove(f"{sid}.wav")
                 await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id")}, room=sid)
+            else:
+                ttswav = synthesizer.tts("Sorry, could you say that again?", "p243")
+                synthesizer.save_wav(ttswav, f"{sid}.wav")
+                encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
+                os.remove(f"{sid}.wav")
+                await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id")}, room=sid)
 
 @sio.event
 async def connect(sid, environ):
@@ -208,7 +249,6 @@ async def index(request):
     with open('app.html') as f:
         return web.Response(text=f.read(), content_type='text/html')
 
-app.add_routes(routes)
 app.router.add_get('/', index)
 if __name__ == '__main__':
     web.run_app(app, port=1337)

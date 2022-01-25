@@ -27,18 +27,20 @@ pip install TTS
 python server.py
 ```
 
-# Virtual Environment Installation
+# Virtual Environment Installation (Recommended)
 ```
 # create a virtual env for the project using your desired python version
 C:\Users\username\AppData\Local\Programs\Python\Python38\python.exe -m venv venv
 
 # activate the newly created virtual environment & install dependencies (on windows)
+pip install virtualenv
 ./venv/scripts/activate.ps1
-pip install -r windows.txt
 
 # activate the newly created virtual environment & install dependencies (on ubuntu)
+pip install python3.8-venv
 source venv/bin/activate
-pip install -r ubuntu.txt
+
+pip install -r requirements.txt
 
 # install Coqui TTS
 pip install TTS
