@@ -52,15 +52,15 @@ print("Loaded synthesizer in {:.3}s.".format(synthesizer_load_end))
 
 # download stt model
 if not path.exists("model.tflite"):
-    r = requests.get("https://github.com/coqui-ai/STT-models/releases/download/english/coqui/v0.9.3/model.tflite")
+    r = requests.get("https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.tflite")
     with open("model.tflite", 'wb') as f:
-        f.write(r.content) 
+        f.write(r.content)
 
 # download stt scorer
 if not path.exists("model.scorer"):
-    r = requests.get("https://github.com/coqui-ai/STT-models/releases/download/english/coqui/v0.9.3/coqui-stt-0.9.3-models.scorer")
+    r = requests.get("https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.scorer")
     with open("model.scorer", 'wb') as f:
-        f.write(r.content) 
+        f.write(r.content)
 
 # load STT model
 scorer = "model.scorer"
@@ -218,13 +218,20 @@ async def emitAudio(sid, msg):
                 synthesizer.save_wav(ttswav, f"{sid}.wav")
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
                 os.remove(f"{sid}.wav")
-                await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id")}, room=sid)
+                await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': f"{out}"}, room=sid)
             else:
                 ttswav = synthesizer.tts("Sorry, could you say that again?", "p243")
                 synthesizer.save_wav(ttswav, f"{sid}.wav")
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
                 os.remove(f"{sid}.wav")
-                await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id")}, room=sid)
+                await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': ''}, room=sid)
+ 
+@sio.event
+async def emitRating(sid, msg):
+    jsonData = json.loads(json.dumps(msg))
+    rating = jsonData.get('rating') # log rating for conversation
+    text = jsonData.get('text')
+    await sio.emit('chatMessage', f'User connected: {sid}', room=sid)
 
 @sio.event
 async def connect(sid, environ):
