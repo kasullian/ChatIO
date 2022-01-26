@@ -68,13 +68,13 @@ model = "model.tflite"
 model_load_start = timer()
 ds = Model(model)
 model_load_end = timer() - model_load_start
-print("Loaded model in {:.3}s.".format(model_load_end))
+print("Loaded speech to text model in {:.3}s.".format(model_load_end))
 
 # load STT scorer
 scorer_load_start = timer()
 ds.enableExternalScorer(scorer)
 scorer_load_end = timer() - scorer_load_start
-print("Loaded scorer in {:.3}s.".format(scorer_load_end))
+print("Loaded speech to text scorer in {:.3}s.".format(scorer_load_end))
 
 # initialize socketio web server
 sio = socketio.AsyncServer(async_mode='aiohttp')
@@ -164,7 +164,6 @@ route = cors.add(
         )
     })
 
-
 @sio.event
 async def chatMessage(sid, msg):
     client = get_client(sid)
@@ -179,14 +178,16 @@ async def chatMessage(sid, msg):
 @sio.event
 async def emitText(sid, msg):  
     client = get_client(sid)
-    if client:  
-        client.send({"text": f"{msg}"})
-        bbResponse = json.loads(client.receive())
-        ttswav = synthesizer.tts(bbResponse["text"], "p243")
+    if client:
+        jsonData = json.loads(json.dumps(msg))
+        textIn = jsonData.get("text_input")
+        client.send({"text": f"{textIn}"})
+        bbResponse = json.loads(client.receive())["text"]
+        ttswav = synthesizer.tts(bbResponse, "p243")
         synthesizer.save_wav(ttswav, f"{sid}.wav")
         encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
         os.remove(f"{sid}.wav")
-        await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string}, room=sid)
+        await sio.emit('avatarResponse', {'text': bbResponse, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': textIn}, room=sid)
 
 @sio.event #todo: stop writing wav to disk
 async def emitAudio(sid, msg):
@@ -218,20 +219,20 @@ async def emitAudio(sid, msg):
                 synthesizer.save_wav(ttswav, f"{sid}.wav")
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
                 os.remove(f"{sid}.wav")
-                await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': f"{out}"}, room=sid)
+                await sio.emit('avatarResponse', {'text': bbResponse, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': f"{out}"}, room=sid)
             else:
                 ttswav = synthesizer.tts("Sorry, could you say that again?", "p243")
                 synthesizer.save_wav(ttswav, f"{sid}.wav")
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
                 os.remove(f"{sid}.wav")
-                await sio.emit('avatarResponse', {'text': msg, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': ''}, room=sid)
+                await sio.emit('avatarResponse', {'text': 'Sorry, could you say that again?', 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': ''}, room=sid)
  
 @sio.event
 async def emitRating(sid, msg):
     jsonData = json.loads(json.dumps(msg))
     rating = jsonData.get('rating') # log rating for conversation
     text = jsonData.get('text')
-    await sio.emit('chatMessage', f'User connected: {sid}', room=sid)
+    await sio.emit('chatMessage', f'User {sid} sent rating {rating} for: {text}', room=sid)
 
 @sio.event
 async def connect(sid, environ):
