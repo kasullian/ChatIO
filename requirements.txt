@@ -6,3 +6,4 @@ requests
 stt
 tinydb
 python-dotenv
+google-cloud-speech
