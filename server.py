@@ -1,4 +1,5 @@
 import os
+import io
 import os.path
 import requests
 import socketio
@@ -17,7 +18,31 @@ from timeit import default_timer as timer
 from websocket import create_connection
 from tinydb import TinyDB
 from dotenv import load_dotenv
+from google.cloud import speech
 load_dotenv()
+
+google_stt_config = speech.RecognitionConfig(
+    encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+    enable_automatic_punctuation=True,
+    audio_channel_count=1,
+    language_code="en-US"
+)
+
+# google speech to text
+def speech_to_text(config, audio):
+    client = speech.SpeechClient()
+    response = client.recognize(config=config, audio=audio)
+    if response.results:
+        for result in response.results:
+            best_alternative = result.alternatives[0]
+            transcript = best_alternative.transcript
+            confidence = best_alternative.confidence
+            print("-" * 80)
+            print(f"STT Transcript: {transcript}")
+            print(f"STT Confidence: {confidence:.0%}")
+            return transcript
+    else:
+        return False
 
 # get TTS models from coqui / https://github.com/coqui-ai/TTS/blob/main/TTS/bin/synthesize.py
 response = requests.get('https://raw.githubusercontent.com/coqui-ai/TTS/main/TTS/.models.json')
@@ -48,33 +73,33 @@ synthesizer = Synthesizer(
     False, #cuda
 )
 synthesizer_load_end = timer() - synthesizer_load_start
-print("Loaded synthesizer in {:.3}s.".format(synthesizer_load_end))
+print("Loaded TTS synthesizer in {:.3}s.".format(synthesizer_load_end))
 
-# download stt model
-if not path.exists("model.tflite"):
-    r = requests.get("https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.tflite")
-    with open("model.tflite", 'wb') as f:
-        f.write(r.content)
+## download stt model
+#if not path.exists("model.tflite"):
+#    r = requests.get("https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.tflite")
+#    with open("model.tflite", 'wb') as f:
+#        f.write(r.content)
 
-# download stt scorer
-if not path.exists("model.scorer"):
-    r = requests.get("https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.scorer")
-    with open("model.scorer", 'wb') as f:
-        f.write(r.content)
+## download stt scorer
+#if not path.exists("model.scorer"):
+#    r = requests.get("https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.scorer")
+#    with open("model.scorer", 'wb') as f:
+#        f.write(r.content)
 
-# load STT model
-scorer = "model.scorer"
-model = "model.tflite"
-model_load_start = timer()
-ds = Model(model)
-model_load_end = timer() - model_load_start
-print("Loaded speech to text model in {:.3}s.".format(model_load_end))
+## load STT model
+#scorer = "model.scorer"
+#model = "model.tflite"
+#model_load_start = timer()
+#ds = Model(model)
+#model_load_end = timer() - model_load_start
+#print("Loaded speech to text model in {:.3}s.".format(model_load_end))
 
-# load STT scorer
-scorer_load_start = timer()
-ds.enableExternalScorer(scorer)
-scorer_load_end = timer() - scorer_load_start
-print("Loaded speech to text scorer in {:.3}s.".format(scorer_load_end))
+## load STT scorer
+#scorer_load_start = timer()
+#ds.enableExternalScorer(scorer)
+#scorer_load_end = timer() - scorer_load_start
+#print("Loaded speech to text scorer in {:.3}s.".format(scorer_load_end))
 
 # initialize socketio web server
 sio = socketio.AsyncServer(async_mode='aiohttp')
@@ -195,22 +220,21 @@ async def emitAudio(sid, msg):
     decoded_data = base64.b64decode(jsonData.get("audio_input"))
     client = get_client(sid)
     if client:
-        with wave.open(f"{sid}_TEST.wav", 'w') as wav:
+        with wave.open(f"{sid}.wav", 'w') as wav:
             wav.setparams((1, 2, 16000, 0, 'NONE', 'NONE'))
             wav.writeframes(decoded_data)
-        with wave.open(f"{sid}_TEST.wav", 'r') as wav:
-            fs_orig = wav.getframerate()
-            audio = np.frombuffer(wav.readframes(wav.getnframes()), np.int16)
-            audio_length = wav.getnframes() * (1 / fs_orig)
+        with io.open(f"{sid}.wav", "rb") as audio_file:
+            content = audio_file.read()
+            audio = speech.RecognitionAudio(content=content)
             inference_start = timer()
-            out = ds.stt(audio)
             inference_end = timer() - inference_start
-            print("STT Inference took %0.3fs for %0.3fs audio file." % (inference_end, audio_length))
-            print(f"User said: {out}") # if hotphrase detected, then return relative generic response
-            blender_start = timer() # else do the blenderbot stuff
-            out = ds.stt(audio)
-            if len(out) != 0:
-                client.send({"text": f"{out}"})
+            sttResponse = speech_to_text(google_stt_config, audio)
+            inference_end = timer() - inference_start
+            # Reads the response
+            if response:
+                print("STT Inference took: %0.3fs" % (inference_end))
+                blender_start = timer()
+                client.send({"text": f"{sttResponse}"})
                 result = client.receive()
                 blender_end = timer() - blender_start
                 print("BB Inference took %0.3fs" % (blender_end))
@@ -219,14 +243,20 @@ async def emitAudio(sid, msg):
                 synthesizer.save_wav(ttswav, f"{sid}.wav")
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
                 os.remove(f"{sid}.wav")
-                await sio.emit('avatarResponse', {'text': bbResponse, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': f"{out}"}, room=sid)
+                await sio.emit('avatarResponse', {'text': bbResponse, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': f"{sttResponse}"}, room=sid)
             else:
                 ttswav = synthesizer.tts("Sorry, could you say that again?", "p243")
                 synthesizer.save_wav(ttswav, f"{sid}.wav")
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
                 os.remove(f"{sid}.wav")
-                await sio.emit('avatarResponse', {'text': 'Sorry, could you say that again?', 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': ''}, room=sid)
- 
+                await sio.emit('avatarResponse', {'text': 'Sorry, could you say that again?', 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': 'NULL'}, room=sid)
+    else:
+        ttswav = synthesizer.tts("BlenderBot is offline.", "p243")
+        synthesizer.save_wav(ttswav, f"{sid}.wav")
+        encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
+        os.remove(f"{sid}.wav")
+        await sio.emit('avatarResponse', {'text': 'BlenderBot is offline.', 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': 'NULL'}, room=sid)
+
 @sio.event
 async def emitRating(sid, msg):
     jsonData = json.loads(json.dumps(msg))
