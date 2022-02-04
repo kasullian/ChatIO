@@ -250,7 +250,7 @@ async def emitAudio(sid, msg):
             sttResponse = speech_to_text(google_stt_config, audio)
             inference_end = timer() - inference_start
             # Reads the response
-            if response:
+            if sttResponse:
                 print("STT Inference took: %0.3fs" % (inference_end))
                 blender_start = timer()
                 client.send({"text": f"{sttResponse}"})
