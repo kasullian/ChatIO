@@ -21,6 +21,25 @@ from dotenv import load_dotenv
 from google.cloud import speech
 load_dotenv()
 
+
+from transformers import BlenderbotTokenizer, BlenderbotForConditionalGeneration 
+model = BlenderbotForConditionalGeneration.from_pretrained('facebook/blenderbot-400M-distill' ) 
+tokenizer = BlenderbotTokenizer.from_pretrained('facebook/blenderbot-400M-distill' ) 
+UTTERANCE = "My friends are cool but they eat too many carbs." 
+print("Human: ", UTTERANCE) 
+blender_start = timer()
+inputs = tokenizer([UTTERANCE], return_tensors='pt') 
+reply_ids = model.generate(**inputs) 
+print("Bot: ", tokenizer.batch_decode(reply_ids, skip_special_tokens=True)[0])
+blender_end = timer() - blender_start
+print("BB Inference took %0.3fs" % (blender_end))
+
+inputs = tokenizer(['What is your name?'], return_tensors='pt') 
+reply_ids = model.generate(**inputs) 
+print("Bot: ", tokenizer.batch_decode(reply_ids, skip_special_tokens=True)[0])
+blender_end = timer() - blender_start
+print("BB Inference took %0.3fs" % (blender_end))
+
 google_stt_config = speech.RecognitionConfig(
     encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
     enable_automatic_punctuation=True,
