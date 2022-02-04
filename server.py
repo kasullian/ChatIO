@@ -21,6 +21,10 @@ from dotenv import load_dotenv
 from google.cloud import speech
 load_dotenv()
 
+import torch
+print(torch.cuda.is_available())
+print(torch.cuda.current_device())
+print(torch.cuda.device(0))
 
 from transformers import BlenderbotTokenizer, BlenderbotForConditionalGeneration 
 model = BlenderbotForConditionalGeneration.from_pretrained('facebook/blenderbot-400M-distill' ) 
