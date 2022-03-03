@@ -21,28 +21,10 @@ from dotenv import load_dotenv
 from google.cloud import speech
 load_dotenv()
 
-import torch
-print(torch.cuda.is_available())
-print(torch.cuda.current_device())
-print(torch.cuda.device(0))
-
-from transformers import BlenderbotTokenizer, BlenderbotForConditionalGeneration 
-model = BlenderbotForConditionalGeneration.from_pretrained('facebook/blenderbot-400M-distill' ) 
-tokenizer = BlenderbotTokenizer.from_pretrained('facebook/blenderbot-400M-distill' ) 
-UTTERANCE = "My friends are cool but they eat too many carbs." 
-print("Human: ", UTTERANCE) 
-blender_start = timer()
-inputs = tokenizer([UTTERANCE], return_tensors='pt') 
-reply_ids = model.generate(**inputs) 
-print("Bot: ", tokenizer.batch_decode(reply_ids, skip_special_tokens=True)[0])
-blender_end = timer() - blender_start
-print("BB Inference took %0.3fs" % (blender_end))
-
-inputs = tokenizer(['What is your name?'], return_tensors='pt') 
-reply_ids = model.generate(**inputs) 
-print("Bot: ", tokenizer.batch_decode(reply_ids, skip_special_tokens=True)[0])
-blender_end = timer() - blender_start
-print("BB Inference took %0.3fs" % (blender_end))
+#import torch
+#print(torch.cuda.is_available())
+#print(torch.cuda.current_device())
+#print(torch.cuda.device(0))
 
 google_stt_config = speech.RecognitionConfig(
     encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
@@ -98,32 +80,6 @@ synthesizer = Synthesizer(
 synthesizer_load_end = timer() - synthesizer_load_start
 print("Loaded TTS synthesizer in {:.3}s.".format(synthesizer_load_end))
 
-## download stt model
-#if not path.exists("model.tflite"):
-#    r = requests.get("https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.tflite")
-#    with open("model.tflite", 'wb') as f:
-#        f.write(r.content)
-
-## download stt scorer
-#if not path.exists("model.scorer"):
-#    r = requests.get("https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.scorer")
-#    with open("model.scorer", 'wb') as f:
-#        f.write(r.content)
-
-## load STT model
-#scorer = "model.scorer"
-#model = "model.tflite"
-#model_load_start = timer()
-#ds = Model(model)
-#model_load_end = timer() - model_load_start
-#print("Loaded speech to text model in {:.3}s.".format(model_load_end))
-
-## load STT scorer
-#scorer_load_start = timer()
-#ds.enableExternalScorer(scorer)
-#scorer_load_end = timer() - scorer_load_start
-#print("Loaded speech to text scorer in {:.3}s.".format(scorer_load_end))
-
 # initialize socketio web server
 sio = socketio.AsyncServer(async_mode='aiohttp')
 app = web.Application()
@@ -136,7 +92,7 @@ db = TinyDB('db.json')
 clientTable = []
 def get_client(sid):
     for client in clientTable:
-        if client.get_sid() == sid and client.get_socket():
+        if client.get_sid() == sid:
             return client
     return False
 
@@ -146,30 +102,9 @@ class BlenderBotClient:
         self.sid = sid
         self.responses = []
         self.messages = []
-        # initialize blenderbot instance
-        try:
-            self.ws = create_connection(os.getenv('BLENDERBOT_URL')) #########################################
-            self.ws.send(json.dumps({"text": "begin"})) #sequence to initiate basic parl-ai socket instance ##
-            result = self.ws.recv()                     ######################################################
-            self.ws.send(json.dumps({"text": "begin"})) ######################################################
-            result = self.ws.recv()                      ######################################################
-            print("Received '%s'" % result)             ######################################################
-        except:
-            self.ws = False
-            print(f"{sid}: failed to connect to BlenderBot.")
-    def disconnect(self):
-        self.ws.close()
-    def send(self, jsonObject):
-        self.messages.append(jsonObject)
-        self.ws.send(json.dumps(jsonObject))
-    def receive(self):
-        result = self.ws.recv()
-        self.responses.append(json.loads(result))
-        return result
+        self.context = '' # update context with stored data 
     def get_sid(self):
         return self.sid
-    def get_socket(self):
-        return self.ws
     def get_logs(self):
         return json.dumps({'messages': self.messages, 'responses': self.responses})
 
@@ -212,14 +147,106 @@ route = cors.add(
         )
     })
 
+from keybert import KeyBERT
+kw_model = KeyBERT()
+def keybert_keyword(sequence, max_ngram=3):
+    n = 1
+    candidate_keys = []
+    candidate_scores = []
+    while n <= max_ngram:
+        top_key = kw_model.extract_keywords(sequence, keyphrase_ngram_range=(1, n), stop_words=None)[0]
+        candidate_keys += [top_key[0]]
+        candidate_scores += [top_key[1]]
+        n += 1
+
+    best_score = max(candidate_scores)
+    best_keyword = candidate_keys[candidate_scores.index(best_score)]
+
+    return best_keyword
+
+from transformers import pipeline
+classifier = pipeline("zero-shot-classification", model='valhalla/distilbart-mnli-12-3')
+def zeroshot_topic(sequence):
+    labels = ['work', 'family', 'relationships', 'people', 'places', 'foods', 'interests', 'watch list', 'music', 'series', 'anime', 'sports']
+    results = classifier(sequence, labels, multi_label=True)
+    label = results['labels'][0]
+    return label
+
+from difflib import SequenceMatcher
+def similar(a, b):
+    return SequenceMatcher(None, a, b).ratio()
+
+import spacy
+nlp = spacy.load('en_core_web_sm',disable=['ner','textcat']) #python -m spacy download en
+def postagger_type(sequence):
+    doc = nlp(sequence)
+    noun_count = 0
+    for token in doc:
+        if token.pos_=='NOUN' or token.pos_=='PROPN':
+            noun_count += 1
+    if noun_count == 0:
+        return 'Simple'
+    else:
+        return 'Complex'
+
+context="The following is a conversation with an AI assistant named Becky. The assistant is helpful, creative, clever, and very friendly.\nInformation about the Human:"
+def preprocess_input(msg):
+    # determine topic label
+    complexity = postagger_type(msg)
+    if(complexity == 'Complex'):
+        topic = zeroshot_topic(msg)
+        keyword = keybert_keyword(msg)
+        information = keyword
+        lineNum = 0
+        duplicate = False
+        global context
+        for line in context.splitlines():
+            print(lineNum, line)
+            if lineNum >= 2:
+                similarity = similar(information, line)
+                if similarity >= 0.85:
+                    print("DUPLICATE")
+                    duplicate = True
+                print(similarity)
+            lineNum = lineNum + 1
+        if duplicate == False:
+            if len(information) < 20:
+                context = context + "\nHuman: " + msg
+                print("added: " + "\nHuman: " + msg)
+            else:
+                context = context + "\n" + information
+                print("added: " + information)
+
+    return msg
+
+import openai
+openai.api_key = os.getenv("OPENAI_API_KEY")
+def generate_response(msg):
+    start_sequence = "\nAI: "
+    restart_sequence = "\nHuman: "
+    message = preprocess_input(msg)
+    chat = context + restart_sequence + message + start_sequence
+    response = openai.Completion.create(
+      engine="text-davinci-001",
+      prompt=chat,
+      temperature=0.9,
+      max_tokens=150,
+      top_p=1,
+      frequency_penalty=0,
+      presence_penalty=0.6,
+      stop=[" Human:", " AI:"]
+    )
+    jsonData = json.loads(json.dumps(response))
+    response = jsonData.get("choices")[0].get("text")[2:]
+    return response
+
 @sio.event
 async def chatMessage(sid, msg):
     client = get_client(sid)
     if client:
         await sio.emit('chatMessage', {"User": msg}, room=sid)
-        client.send({"text": f"{msg}"})
-        bbResponse = json.loads(client.receive())
-        await sio.emit('chatMessage', {"BlenderBot": bbResponse["text"]}, room=sid)
+        response = generate_response(msg)
+        await sio.emit('chatMessage', {"Bot": response}, room=sid)
     else:
         await sio.emit('chatMessage', 'Not connected to BlenderBot.', room=sid) 
 
@@ -229,13 +256,12 @@ async def emitText(sid, msg):
     if client:
         jsonData = json.loads(json.dumps(msg))
         textIn = jsonData.get("text_input")
-        client.send({"text": f"{textIn}"})
-        bbResponse = json.loads(client.receive())["text"]
-        ttswav = synthesizer.tts(bbResponse, "p243")
+        response = generate_response(textIn)
+        ttswav = synthesizer.tts(response, "p243")
         synthesizer.save_wav(ttswav, f"{sid}.wav")
         encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
         os.remove(f"{sid}.wav")
-        await sio.emit('avatarResponse', {'text': bbResponse, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': textIn}, room=sid)
+        await sio.emit('avatarResponse', {'text': response, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': textIn}, room=sid)
 
 @sio.event #todo: stop writing wav to disk
 async def emitAudio(sid, msg):
@@ -257,16 +283,14 @@ async def emitAudio(sid, msg):
             if sttResponse:
                 print("STT Inference took: %0.3fs" % (inference_end))
                 blender_start = timer()
-                client.send({"text": f"{sttResponse}"})
-                result = client.receive()
+                response = generate_response(sttResponse)
                 blender_end = timer() - blender_start
                 print("BB Inference took %0.3fs" % (blender_end))
-                bbResponse = json.loads(result)["text"]
-                ttswav = synthesizer.tts(bbResponse, "p243")
+                ttswav = synthesizer.tts(response, "p243")
                 synthesizer.save_wav(ttswav, f"{sid}.wav")
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
                 os.remove(f"{sid}.wav")
-                await sio.emit('avatarResponse', {'text': bbResponse, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': f"{sttResponse}"}, room=sid)
+                await sio.emit('avatarResponse', {'text': response, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': f"{sttResponse}"}, room=sid)
             else:
                 ttswav = synthesizer.tts("Sorry, could you say that again?", "p243")
                 synthesizer.save_wav(ttswav, f"{sid}.wav")

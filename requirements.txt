@@ -2,8 +2,13 @@ asyncio
 python-socketio
 websocket-client
 aiohttp
+aiohttp_cors
 requests
 stt
 tinydb
 python-dotenv
 google-cloud-speech
+openai
+transformers
+keybert
+spacy
