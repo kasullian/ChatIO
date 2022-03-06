@@ -10,7 +10,7 @@ import json
 import wave
 import numpy as np
 from os import path
-from stt import Model
+#from stt import Model
 from TTS.utils.manage import ModelManager
 from TTS.utils.synthesizer import Synthesizer
 from aiohttp import web
@@ -177,7 +177,7 @@ def similar(a, b):
     return SequenceMatcher(None, a, b).ratio()
 
 import spacy
-nlp = spacy.load('en_core_web_sm',disable=['ner','textcat']) #python -m spacy download en
+nlp = spacy.load('en_core_web_sm', disable=['ner','textcat']) #python -m spacy download en
 def postagger_type(sequence):
     doc = nlp(sequence)
     noun_count = 0
