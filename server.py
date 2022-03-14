@@ -147,8 +147,29 @@ route = cors.add(
         )
     })
 
+from sentence_transformers import SentenceTransformer, util
+from transformers import pipeline
 from keybert import KeyBERT
+
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L12-v1')
+classifier = pipeline("zero-shot-classification", model='valhalla/distilbart-mnli-12-3')
 kw_model = KeyBERT()
+
+# %%
+def zeroshot_topic(sequence):
+    
+    labels = [
+        'work', 'family', 'relationships', 'people', 'places', 'foods', 'interests', 
+        # 'watch list', 'music', 'dislikes',
+    ]
+
+    results = classifier(sequence, labels, multi_label=True)
+   
+    label = results['labels'][0]
+
+    output = {'sequence': sequence, 'topic': label}
+    return output['topic']
+
 def keybert_keyword(sequence, max_ngram=3):
     n = 1
     candidate_keys = []
@@ -164,17 +185,39 @@ def keybert_keyword(sequence, max_ngram=3):
 
     return best_keyword
 
-from transformers import pipeline
-classifier = pipeline("zero-shot-classification", model='valhalla/distilbart-mnli-12-3')
-def zeroshot_topic(sequence):
-    labels = ['work', 'family', 'relationships', 'people', 'places', 'foods', 'interests', 'watch list', 'music', 'series', 'anime', 'sports']
-    results = classifier(sequence, labels, multi_label=True)
-    label = results['labels'][0]
-    return label
+def substring_after(s, delim):
+    return s.partition(delim)[2]
 
-from difflib import SequenceMatcher
-def similar(a, b):
-    return SequenceMatcher(None, a, b).ratio()
+context="The following is a conversation with an AI assistant named Becky. The assistant is helpful, creative, clever, and very friendly.\nInformation about the Human:\nInformation about the AI:\n"
+def duplicate_detection(sequence, outArray, lineNum, threshold=0.7):
+    
+    # Get topic and keyword from user input
+    # topic = zeroshot_topic(sequence)
+    new_kw = keybert_keyword(sequence, max_ngram=12)
+    
+    aiContext = substring_after(context, "Information about the AI:\n")
+    aiContextArr = aiContext.splitlines()
+    print(aiContextArr)
+
+    # Get related keywords from user database
+    # replace user_data with global context history array
+    #related_data = user_data[user_data.topic == topic]
+    old_keyword = aiContextArr
+    #
+    ## Get the embeddings and calculate similarity
+    if len(aiContextArr) != 0:
+        embeddings1 = model.encode(new_kw, convert_to_tensor=True)
+        embeddings2 = model.encode(old_keyword, convert_to_tensor=True)
+        cosine_scores = util.cos_sim(embeddings1, embeddings2)
+        if max(cosine_scores[0]) < threshold:
+            outArray.insert(lineNum + 1, new_kw)
+            decision = "Get new keyword"
+        else:
+            decision = "Duplicate detected"
+    else:
+        outArray.insert(lineNum + 1, new_kw)
+        decision = "Get new keyword"
+    return decision, sequence
 
 import spacy
 nlp = spacy.load('en_core_web_sm', disable=['ner','textcat']) #python -m spacy download en
@@ -189,35 +232,36 @@ def postagger_type(sequence):
     else:
         return 'Complex'
 
-context="The following is a conversation with an AI assistant named Becky. The assistant is helpful, creative, clever, and very friendly.\nInformation about the Human:"
 def preprocess_input(msg):
     # determine topic label
     complexity = postagger_type(msg)
     if(complexity == 'Complex'):
         topic = zeroshot_topic(msg)
         keyword = keybert_keyword(msg)
-        information = keyword
+        # print(topic, keyword)
         lineNum = 0
-        duplicate = False
         global context
         for line in context.splitlines():
             print(lineNum, line)
-            if lineNum >= 2:
-                similarity = similar(information, line)
-                if similarity >= 0.85:
-                    print("DUPLICATE")
-                    duplicate = True
-                print(similarity)
             lineNum = lineNum + 1
-        if duplicate == False:
-            if len(information) < 20:
-                context = context + "\nHuman: " + msg
-                print("added: " + "\nHuman: " + msg)
-            else:
-                context = context + "\n" + information
-                print("added: " + information)
 
     return msg
+
+def postprocess_output(msg):
+    # determine topic label
+    newMsg = msg.replace('\n', '')
+    complexity = postagger_type(newMsg) # if output is complex then store it in context
+    global context
+    if(complexity == 'Complex'):
+        linesArray = context.splitlines()
+        lineNum = 0
+        for line in linesArray:
+            if line == "Information about the AI:":
+                print(duplicate_detection(newMsg, linesArray, lineNum))
+                context = "\n".join(linesArray)
+            lineNum = lineNum + 1
+    print('postProcess:', context)
+    return newMsg
 
 import openai
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -230,14 +274,14 @@ def generate_response(msg):
       engine="text-davinci-001",
       prompt=chat,
       temperature=0.9,
-      max_tokens=150,
+      max_tokens=95,
       top_p=1,
       frequency_penalty=0,
       presence_penalty=0.6,
       stop=[" Human:", " AI:"]
     )
     jsonData = json.loads(json.dumps(response))
-    response = jsonData.get("choices")[0].get("text")[2:]
+    response = postprocess_output(jsonData.get("choices")[0].get("text"))
     return response
 
 @sio.event

@@ -12,3 +12,4 @@ keybert
 spacy
 openai
 stt
+sentence_transformers
