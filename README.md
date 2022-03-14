@@ -1,30 +1,13 @@
 # ChatIO
-Basic chat service utilizing Coqui TTS, Coqui STT, aiohttp &amp; socketio.
+Basic chat service utilizing Coqui TTS, Google Cloud speech-to-text, GPT-3, aiohttp &amp; socketio.
 
 # Requirements
 * Python 3.8
 
-# Configuring Speech To Text
-You can use a pre-build STT model from the [Coqui Model Zoo](https://coqui.ai/models/).
-
-* Modify the source to use the url of your desired model & scorer
-
-# Configuring BlenderBot
+# Configuring OpenAI's GPT
  Create a .env file in the project directory then paste the following into the file
 ```
-BLENDERBOT_URL=ws://localhost:8080/websocket
-```
-
-# Installation
-```
-# install dependencies if on windows
-pip install -r requirements.txt
-
-# install Coqui TTS
-pip install TTS
-
-# run the server
-python server.py
+OPENAI_API_KEY=youropenaiapikey
 ```
 
 # Virtual Environment Installation (Recommended)
@@ -40,10 +23,14 @@ pip install virtualenv
 pip install python3.8-venv
 source venv/bin/activate
 
+# install all dependencies
 pip install -r requirements.txt
 
 # install Coqui TTS
 pip install TTS
+
+# install spacey
+python -m spacy download en
 
 # run the server
 python server.py
