@@ -233,11 +233,11 @@ def postagger_type(sequence):
         return 'Complex'
 
 def preprocess_input(msg):
-    # determine topic label
+    # todo: store user contextual keywords
     complexity = postagger_type(msg)
     if(complexity == 'Complex'):
-        topic = zeroshot_topic(msg)
-        keyword = keybert_keyword(msg)
+        # topic = zeroshot_topic(msg)
+        # keyword = keybert_keyword(msg)
         # print(topic, keyword)
         lineNum = 0
         global context
@@ -260,7 +260,6 @@ def postprocess_output(msg):
                 print(duplicate_detection(newMsg, linesArray, lineNum))
                 context = "\n".join(linesArray)
             lineNum = lineNum + 1
-    print('postProcess:', context)
     return newMsg
 
 import openai
