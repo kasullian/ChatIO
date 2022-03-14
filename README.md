@@ -10,7 +10,7 @@ Basic chat service utilizing Coqui TTS, Google Cloud speech-to-text, GPT-3, aioh
 OPENAI_API_KEY=youropenaiapikey
 ```
 
-# Virtual Environment Installation (Recommended)
+# Virtual Environment Installation
 ```
 # create a virtual env for the project using your desired python version
 C:\Users\username\AppData\Local\Programs\Python\Python38\python.exe -m venv venv
