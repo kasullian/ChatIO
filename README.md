@@ -12,15 +12,19 @@ OPENAI_API_KEY=youropenaiapikey
 
 # Virtual Environment Installation
 ```
+# install python venv (on windows)
+pip install virtualenv
+
+# install python venv (on ubuntu)
+pip install python3.8-venv
+
 # create a virtual env for the project using your desired python version
 C:\Users\username\AppData\Local\Programs\Python\Python38\python.exe -m venv venv
 
-# activate the newly created virtual environment & install dependencies (on windows)
-pip install virtualenv
+# activate venv windows
 ./venv/scripts/activate.ps1
 
-# activate the newly created virtual environment & install dependencies (on ubuntu)
-pip install python3.8-venv
+# activate venv ubuntu
 source venv/bin/activate
 
 # install all dependencies
