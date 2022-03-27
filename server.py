@@ -3,34 +3,29 @@ import io
 import os.path
 import requests
 import socketio
-import asyncio
 import aiohttp_cors
 import base64
 import json
 import wave
-import numpy as np
-from os import path
-#from stt import Model
-from TTS.utils.manage import ModelManager
-from TTS.utils.synthesizer import Synthesizer
+import spacy
 from aiohttp import web
 from timeit import default_timer as timer
-from websocket import create_connection
 from tinydb import TinyDB
-from dotenv import load_dotenv
 from google.cloud import speech
+from TTS.utils.manage import ModelManager
+from TTS.utils.synthesizer import Synthesizer
+from sentence_transformers import SentenceTransformer, util
+from transformers import pipeline
+from keybert import KeyBERT
+from dotenv import load_dotenv
 load_dotenv()
-
-#import torch
-#print(torch.cuda.is_available())
-#print(torch.cuda.current_device())
-#print(torch.cuda.device(0))
 
 google_stt_config = speech.RecognitionConfig(
     encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
     enable_automatic_punctuation=True,
     audio_channel_count=1,
-    language_code="en-US"
+    #language_code="en-US"
+    language_code="en-GB"
 )
 
 # google speech to text
@@ -75,7 +70,7 @@ synthesizer = Synthesizer(
     vocoder_config_path,
     encoder_path,
     encoder_config_path,
-    False, #cuda
+    True, #cuda
 )
 synthesizer_load_end = timer() - synthesizer_load_start
 print("Loaded TTS synthesizer in {:.3}s.".format(synthesizer_load_end))
@@ -147,29 +142,19 @@ route = cors.add(
         )
     })
 
-from sentence_transformers import SentenceTransformer, util
-from transformers import pipeline
-from keybert import KeyBERT
-
-model = SentenceTransformer('sentence-transformers/all-MiniLM-L12-v1')
-classifier = pipeline("zero-shot-classification", model='valhalla/distilbart-mnli-12-3')
-kw_model = KeyBERT()
-
 # %%
+classifier = pipeline("zero-shot-classification", model='valhalla/distilbart-mnli-12-3', device=0) # use first cuda device
 def zeroshot_topic(sequence):
-    
     labels = [
         'work', 'family', 'relationships', 'people', 'places', 'foods', 'interests', 
         # 'watch list', 'music', 'dislikes',
     ]
-
     results = classifier(sequence, labels, multi_label=True)
-   
     label = results['labels'][0]
-
     output = {'sequence': sequence, 'topic': label}
     return output['topic']
 
+kw_model = KeyBERT()
 def keybert_keyword(sequence, max_ngram=3):
     n = 1
     candidate_keys = []
@@ -179,31 +164,28 @@ def keybert_keyword(sequence, max_ngram=3):
         candidate_keys += [top_key[0]]
         candidate_scores += [top_key[1]]
         n += 1
-
     best_score = max(candidate_scores)
     best_keyword = candidate_keys[candidate_scores.index(best_score)]
-
     return best_keyword
 
 def substring_after(s, delim):
     return s.partition(delim)[2]
 
-context="The following is a conversation with an AI assistant named Becky. The assistant is helpful, creative, clever, and very friendly.\nInformation about the Human:\nInformation about the AI:\n"
-def duplicate_detection(sequence, outArray, lineNum, threshold=0.7):
-    
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L12-v1', device='cuda')
+context="The following is a conversation with a female AI named Becky. She is someone who you can rely on when you need it. They treat you with respect and being around them makes you feel good. They can sometimes be sarcastic, but they have your best interest at heart. They like to play games, watch movies, read books, and draw. You feel comfortable being yourself with them and you can trust them. \nBecky: Hello!!! What are you up to right now?\n"
+def duplicate_detection(sequence, outArray, lineNum, threshold=0.7, isBot=False):
     # Get topic and keyword from user input
     # topic = zeroshot_topic(sequence)
-    new_kw = keybert_keyword(sequence, max_ngram=12)
+    keywordLimit = 7 if isBot else 13
+    new_kw = keybert_keyword(sequence, max_ngram=keywordLimit)
     
     aiContext = substring_after(context, "Information about the AI:\n")
     aiContextArr = aiContext.splitlines()
-    print(aiContextArr)
+    #print(aiContextArr)
 
     # Get related keywords from user database
-    # replace user_data with global context history array
     #related_data = user_data[user_data.topic == topic]
     old_keyword = aiContextArr
-    #
     ## Get the embeddings and calculate similarity
     if len(aiContextArr) != 0:
         embeddings1 = model.encode(new_kw, convert_to_tensor=True)
@@ -211,76 +193,79 @@ def duplicate_detection(sequence, outArray, lineNum, threshold=0.7):
         cosine_scores = util.cos_sim(embeddings1, embeddings2)
         if max(cosine_scores[0]) < threshold:
             outArray.insert(lineNum + 1, new_kw)
-            decision = "Get new keyword"
+            decision = "Get new keyword B"
         else:
             decision = "Duplicate detected"
     else:
         outArray.insert(lineNum + 1, new_kw)
-        decision = "Get new keyword"
+        decision = "Get new keyword A"
     return decision, sequence
 
-import spacy
-nlp = spacy.load('en_core_web_sm', disable=['ner','textcat']) #python -m spacy download en
+nlp = spacy.load('en_core_web_sm', disable=['ner','textcat']) #python -m spacy download en_core_web_sm
 def postagger_type(sequence):
     doc = nlp(sequence)
     noun_count = 0
     for token in doc:
         if token.pos_=='NOUN' or token.pos_=='PROPN':
             noun_count += 1
-    if noun_count == 0:
-        return 'Simple'
-    else:
+    if noun_count >= 3:
         return 'Complex'
+    else:
+        return 'Simple'
 
 def preprocess_input(msg):
     # todo: store user contextual keywords
     complexity = postagger_type(msg)
     if(complexity == 'Complex'):
-        # topic = zeroshot_topic(msg)
-        # keyword = keybert_keyword(msg)
-        # print(topic, keyword)
-        lineNum = 0
         global context
-        for line in context.splitlines():
-            print(lineNum, line)
-            lineNum = lineNum + 1
-
-    return msg
-
-def postprocess_output(msg):
-    # determine topic label
-    newMsg = msg.replace('\n', '')
-    complexity = postagger_type(newMsg) # if output is complex then store it in context
-    global context
-    if(complexity == 'Complex'):
         linesArray = context.splitlines()
         lineNum = 0
         for line in linesArray:
-            if line == "Information about the AI:":
-                print(duplicate_detection(newMsg, linesArray, lineNum))
+            if line == "Information about the Human:":
+                print(duplicate_detection(msg, linesArray, lineNum))
                 context = "\n".join(linesArray)
+                break
             lineNum = lineNum + 1
+    return msg
+
+def postprocess_output(msg):
+    newMsg = msg.replace('\n', '')
+    #complexity = postagger_type(newMsg) # if output is complex then store it in context
+    #if(complexity == 'Complex'):
+    #    global context
+    #    linesArray = context.splitlines()
+    #    lineNum = 0
+    #    for line in linesArray:
+    #        if line == "Information about the AI:":
+    #            print(duplicate_detection(newMsg, linesArray, lineNum, 0.7, True))
+    #            context = "\n".join(linesArray)
+    #            break
+    #        lineNum = lineNum + 1
     return newMsg
 
 import openai
 openai.api_key = os.getenv("OPENAI_API_KEY")
 def generate_response(msg):
-    start_sequence = "\nAI: "
+    start_sequence = "\nBecky: "
     restart_sequence = "\nHuman: "
-    message = preprocess_input(msg)
+    message = msg #preprocess_input(msg)
+    global context
     chat = context + restart_sequence + message + start_sequence
     response = openai.Completion.create(
-      engine="text-davinci-001",
+      engine="text-davinci-002",
       prompt=chat,
       temperature=0.9,
-      max_tokens=95,
+      max_tokens=64,
       top_p=1,
-      frequency_penalty=0,
+      frequency_penalty=2,
       presence_penalty=0.6,
-      stop=[" Human:", " AI:"]
+      stop=[" Human:", " Becky:"]
     )
     jsonData = json.loads(json.dumps(response))
     response = postprocess_output(jsonData.get("choices")[0].get("text"))
+    chat += response
+    context = chat
+    #print(context)
     return response
 
 @sio.event
@@ -303,28 +288,28 @@ async def emitText(sid, msg):
         ttswav = synthesizer.tts(response, "p243")
         synthesizer.save_wav(ttswav, f"{sid}.wav")
         encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
-        os.remove(f"{sid}.wav")
+        #os.remove(f"{sid}.wav")
         await sio.emit('avatarResponse', {'text': response, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': textIn}, room=sid)
 
 @sio.event #todo: stop writing wav to disk
 async def emitAudio(sid, msg):
     jsonData = json.loads(json.dumps(msg))
     decoded_data = base64.b64decode(jsonData.get("audio_input"))
+    #print(jsonData.get("audio_input"))
     client = get_client(sid)
     if client:
-        with wave.open(f"{sid}.wav", 'w') as wav:
+        inference_start = timer()
+        with wave.open(f"{sid}_input.wav", 'w') as wav:
             wav.setparams((1, 2, 16000, 0, 'NONE', 'NONE'))
             wav.writeframes(decoded_data)
-        with io.open(f"{sid}.wav", "rb") as audio_file:
+        with io.open(f"{sid}_input.wav", "rb") as audio_file:
             content = audio_file.read()
             audio = speech.RecognitionAudio(content=content)
-            inference_start = timer()
-            inference_end = timer() - inference_start
             sttResponse = speech_to_text(google_stt_config, audio)
             inference_end = timer() - inference_start
+            print("STT Inference took: %0.3fs" % (inference_end))
             # Reads the response
             if sttResponse:
-                print("STT Inference took: %0.3fs" % (inference_end))
                 blender_start = timer()
                 response = generate_response(sttResponse)
                 blender_end = timer() - blender_start
@@ -332,19 +317,19 @@ async def emitAudio(sid, msg):
                 ttswav = synthesizer.tts(response, "p243")
                 synthesizer.save_wav(ttswav, f"{sid}.wav")
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
-                os.remove(f"{sid}.wav")
+                #os.remove(f"{sid}.wav")
                 await sio.emit('avatarResponse', {'text': response, 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': f"{sttResponse}"}, room=sid)
             else:
                 ttswav = synthesizer.tts("Sorry, could you say that again?", "p243")
                 synthesizer.save_wav(ttswav, f"{sid}.wav")
                 encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
-                os.remove(f"{sid}.wav")
+                #os.remove(f"{sid}.wav")
                 await sio.emit('avatarResponse', {'text': 'Sorry, could you say that again?', 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': 'NULL'}, room=sid)
     else:
         ttswav = synthesizer.tts("BlenderBot is offline.", "p243")
         synthesizer.save_wav(ttswav, f"{sid}.wav")
         encode_string = base64.b64encode(open(f"{sid}.wav", "rb").read()).decode()
-        os.remove(f"{sid}.wav")
+        #os.remove(f"{sid}.wav")
         await sio.emit('avatarResponse', {'text': 'BlenderBot is offline.', 'wav': encode_string, 'id': jsonData.get("id"), 'textInput': 'NULL'}, room=sid)
 
 @sio.event
@@ -364,7 +349,7 @@ async def connect(sid, environ):
 async def disconnect(sid):
     client = get_client(sid)
     if client:
-        client.disconnect()
+        #client.disconnect()
         logs = json.loads(client.get_logs())
         if len(logs.get("responses")):
             table = db.table('logs')

@@ -9,7 +9,7 @@ python-dotenv
 google-cloud-speech
 transformers
 keybert
-spacy
+spacy[cuda113]
 openai
 stt
 sentence_transformers
