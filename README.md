@@ -5,10 +5,12 @@ Basic chat service utilizing Coqui TTS, Google Cloud speech-to-text, GPT-3, aioh
 * Python 3.8
 * https://www.python.org/downloads/release/python-380/
 
-# Configuring OpenAI's GPT
+# Configuring env variables
  Create a .env file in the project directory then paste the following into the file
 ```
-OPENAI_API_KEY=youropenaiapikey
+PROJECT_ID=
+GOOGLE_APPLICATION_CREDENTIALS=key.json
+OPENAI_API_KEY=
 ```
 
 # Virtual Environment Installation
